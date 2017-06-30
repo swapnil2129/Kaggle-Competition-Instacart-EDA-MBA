@@ -1,0 +1,2 @@
+# Kaggle-Competition-Instacart-EDA-MBA
+In this exercise, we analyze the trend in customer shopping behavior on Instacart website for buying groceries. The data set is made public by Instacart- a same day grocery delivery service, for 3 million transactions of over 200,000 users. Market Basket Analysis is done using Apriori algorithm for various support levels, confidence and lift to suggest combination of products to be included in a basket to cross sell the products on the platform. 
