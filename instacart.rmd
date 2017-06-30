@@ -413,4 +413,3 @@ plot(basket_rules,method="grouped")
 
 #Above figure visualizes all the three parameters: support, confidence, and lift. Confidence level is set at 50%. We get a set of 60 rules. We sort them by the value of lift which gives the efficiency of the rule and thereby make our product combinations
 ```
-
