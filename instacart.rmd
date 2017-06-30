@@ -1,0 +1,416 @@
+---
+title: "Instacart EDA & MBA"
+author: "Swapnil Sharma"
+date: "June 30, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Exploratory Data Analysis & Market Basket Analysis 
+Instacart is an internet - based grocery delivery service with a slogan of Groceries Delivered in an Hour. The purpose of this exercise is to analyze the trend in customer buying pattern on Instacart, suggest combination of products which can be sold together under various offers. 
+
+##Loading dependencies and  Data Files
+
+The data set is a relational set of files describing customers' orders over time. The data set is anonymized and contains a sample of over 3 million grocery orders from more than 200,000 Instacart users. For each user, between 4 and 100 of their order details is provided with the sequence of products purchased in each order, the week and hour of day the order was placed and a relative measure of time between orders.
+```{r message=FALSE, warning=FALSE, results='hide'}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(stringr)
+library(DT)
+library(magrittr)
+library(grid)
+library(gridExtra)
+library(ggthemes)
+library(ggrepel)
+library(tcltk)
+library(gsubfn)
+library(proto)
+library(RSQLite)
+library(sqldf)
+library(Matrix)
+library(arules)
+library(tidyr)
+library(arulesViz)
+library(methods)
+
+products<-read.csv("file:///C:/Users/swapn/Downloads/Analytics/Kaggle/InstakartMBA/InstakartMBA/products.csv")
+orders<-read.csv("file:///C:/Users/swapn/Downloads/Analytics/Kaggle/InstakartMBA/InstakartMBA/orders.csv")
+prior<-read.csv("file:///C:/Users/swapn/Downloads/Analytics/Kaggle/InstakartMBA/InstakartMBA/order_products__prior.csv")
+aisles<-read.csv("file:///C:/Users/swapn/Downloads/Analytics/Kaggle/InstakartMBA/InstakartMBA/aisles.csv")
+departments<-read.csv("file:///C:/Users/swapn/Downloads/Analytics/Kaggle/InstakartMBA/InstakartMBA/departments.csv")
+```
+#Viewing the Data Sets
+#{.tabset}
+
+##Orders
+The data set contains list of unique order_id for corresponding  orders made by users. Order_number gives the number of the order. Eval_set denotes if the order is a prior order, train, or test. All but the last order of every user is classified as prior. Last order of every user is either classified as train or test. The ones classified as test are the order_id for which we predict which products will be included in the next order. Order_dow gives the day of the week and order_hour_of_day denotes hour of the day. Days_since_prior_order gives the time difference between two orders and contains NULL value for the first order of every user. There are 3 million plus order_id for 200,000 plus different users.
+
+```{r, result='asis'}
+kable(head(orders,10))
+glimpse(orders)
+dim(orders)
+```
+##Products
+```{r, result='asis'}
+kable(head(products,10))
+glimpse(products)
+dim(products)
+```
+##Aisles
+```{r, result='asis'}
+kable(head(aisles,10))
+glimpse(aisles)
+dim(aisles)
+```
+##Departments
+```{r, result='asis'}
+kable(head(departments,10))
+glimpse(departments)
+dim(departments)
+```
+##Prior
+Prior table contains product_id for every order_id. It thereby gives information about products included in every order. Add_to_cart_order gives the order for product_id by which it was added by customer to their shopping cart. Every product_id is classified and coded as 1 under reordered column if it was previously ordered by customer and 0 otherwise. It is the largest table with over 32 million rows of data.
+
+```{r, result='asis'}
+kable(head(prior,10))
+glimpse(prior)
+dim(prior)
+```
+#Recoding the Character Variables to Factor
+```{r message=FALSE, warning=FALSE}
+orders <- orders %>% mutate(order_hour_of_day = as.numeric(order_hour_of_day), eval_set = as.factor(eval_set))
+products <- products %>% mutate(product_name = as.factor(product_name))
+aisles <- aisles %>% mutate(aisle = as.factor(aisle))
+departments <- departments %>% mutate(department = as.factor(department))
+```
+#Merging The Products_Aisles_Departments Data sets
+
+```{r warning =FALSE}
+Products_Aisles<-merge(products,aisles,by="aisle_id")
+Products_Aisles_Departments<-merge(Products_Aisles,departments,"department_id")
+kable(head(Products_Aisles_Departments,6))
+glimpse(Products_Aisles_Departments)
+dim(Products_Aisles_Departments)
+```
+
+#Instacart Product Offerings
+#{.tabset}
+##Aisle
+Missing, candy chocoloate and Ice cream ice aisle are the aisles with maximum variety of products while few variety is avilable relatively in trash bag liners, frozen dessert and Indian foods aisles
+
+```{r message=FALSE, warning=FALSE,result='asis'}
+Number_of_Product_each_Aisle<-Products_Aisles_Departments%>%group_by(aisle)%>%summarise(Number_of_Products=n())%>%arrange(desc(Number_of_Products))
+
+#Top 20 Aisle by number of product offerings
+Top_20<-head(Number_of_Product_each_Aisle,n=20)
+
+#Plotting Number of Products in each aisle in decreasing order(Top 20)
+ggplot(Top_20, aes(x = reorder(aisle,Number_of_Products), y = Number_of_Products,label=paste0(round(Number_of_Products,0)))) +
+  geom_bar(stat = "identity")+coord_flip()+
+  labs(title="Top 20 Aisle by Variety of Product Offering",y="Number of Products",x="Aisle")+
+  geom_text(nudge_y = 35)
+
+#Bottom 20 Aisle by number of product offerings
+Bottom_20<-tail(Number_of_Product_each_Aisle,n=20)
+
+#Plotting Number of Products in each aisle in decreasing order(Bottom 20)
+ggplot(Bottom_20, aes(x = reorder(aisle,Number_of_Products), y = Number_of_Products,label=paste0(round(Number_of_Products,0)))) +
+  geom_bar(stat = "identity")+coord_flip()+labs(title="Bottom 20 Aisle by Variety of Product offering",y="Number of Products",x="Aisle")+
+  geom_text(nudge_y = 3.5)
+```
+
+##Department
+It can be inferred from the below bar chart that Instacart has maximum number of product offerings across personal care and edible item departments
+
+```{r message=FALSE, warning=FALSE,result='asis'}
+
+#Number of Products in each department
+
+Number_of_Product_each_department<-Products_Aisles_Departments%>%group_by(department)%>%summarise(Number_of_Products=n())%>%arrange(desc(Number_of_Products))
+
+
+#Vis--Bar chart for number of products in each department
+
+ggplot(Number_of_Product_each_department, aes(x = reorder(department,Number_of_Products), y = Number_of_Products,label=paste0(round(Number_of_Products,0)))) +
+  geom_bar(stat = "identity")+coord_flip()+labs(title="Department by Variety of Product offering",y="Number of Products",x="Department")+
+  geom_text(nudge_y = 250)
+```
+
+#Orders EDA
+
+
+#{.tabset}
+
+##Hour_of_Day
+From the figure it is inferred that most people order between 9:00 AM to 6:00 PM in the evening.  Instacart can accordingly plan to hire persons for delivery during days shifts. The visualization is plotted in R with colored portion representing the relative percentage of total orders across the day with 10:00 AM being the busiest hour (100% in vis)
+
+
+```{r}
+Orders_everyhour<-orders%>%group_by(order_hour_of_day)%>%summarise(Number_of_Orders=n())%>%mutate(Percentage_of_orders=(Number_of_Orders*100/nrow(orders)))
+
+#Visualization for number of orders at every hour of the day and every day of the week
+
+# referenced from: http://zoonek2.free.fr/UNIX/48_R/03.html
+
+x<-Orders_everyhour$Percentage_of_orders
+clock.plot <- function (x, col = rainbow(n,s=1,v=1,start=0,end=max(1,n-1)/n,alpha=0.5), ...) {
+  if( min(x)<0 ) x <- x - min(x)
+  if( max(x)>1 ) x <- x/max(x)
+  n <- length(x)
+  if(is.null(names(x))) names(x) <- 0:(n-1)
+  m <- 1.05
+  plot(0, 
+       type = 'n', # do not plot anything
+       xlim = c(-m,m), ylim = c(-m,m), 
+       axes = F, xlab = '', ylab = '', ...)
+  a <- pi/2 - 2*pi/200*0:200
+  polygon( cos(a), sin(a) )
+  v <- .02
+  a <- pi/2 - 2*pi/n*0:n
+  segments( (1+v)*cos(a), (1+v)*sin(a), 
+            (1-v)*cos(a), (1-v)*sin(a) )
+  segments( cos(a), sin(a), 
+            0, 0, 
+            col = 'light grey', lty = 3) 
+  ca <- -2*pi/n*(0:50)/50
+  for (i in 1:n) {
+    a <- pi/2 - 2*pi/n*(i-1)
+    b <- pi/2 - 2*pi/n*i
+    polygon( c(0, x[i]*cos(a+ca), 0),
+             c(0, x[i]*sin(a+ca), 0),
+             col=col[i] )
+    v <- .1
+    text((1+v)*cos(a), (1+v)*sin(a), names(x)[i])
+  }
+}
+clock.plot(x, 
+           main = "Peak Ordering Hours")
+
+```
+
+##Day_of_Week
+
+From the figure below it is deduced that Sunday and Monday are the days when people order most on Instacart
+
+```{r}
+#Number of Orders every day of the week
+
+Orders_everyday<-orders%>%group_by(order_dow)%>%summarise(Number_of_Orders=n())%>%mutate(Percentage_of_orders=(Number_of_Orders*100/nrow(orders)))
+
+#Visualizing Number of Orders by day of the week
+
+ggplot(Orders_everyday,aes(x=order_dow,y=Percentage_of_orders,label=paste0(round(Percentage_of_orders,1))))+
+  geom_bar(stat = "identity")+labs(title="% of Orders by day of the Week",y="Percentage of Total Orders",x="Day of the Week : 0 denotes Sunday ")+
+  geom_text(nudge_y = .5)
+```
+
+##Every Day_ Every Hour
+
+It is found that 10:00 AM on Monday is the time of the day when most orders are placed. This can be thought of when people go to work they refill their groceries for the rest of the week. To visualize this percentage of orders made every hour for every day is plotted and compared. 
+
+```{r}
+Dow_hod_orders<-orders%>%group_by(order_dow,order_hour_of_day)%>%
+  summarise(Number_of_Orders=n())
+
+Dow_hod_orders_combined<-merge(Dow_hod_orders,Orders_everyday,by="order_dow",all.x = TRUE)%>%
+  mutate(Percentage_by_doy=Number_of_Orders.x*100/Number_of_Orders.y)
+
+
+#Visualizing orders by dow-->hod
+
+ggplot(Dow_hod_orders_combined, aes(x = Dow_hod_orders_combined$order_hour_of_day, y = Dow_hod_orders_combined$Percentage_by_doy)) +
+  geom_bar(stat="identity") +
+  labs(title="Visualizing orders by hour of day for each day of week with 0 representing Sunday",x="0-24 represents hours of the day",y="Percentage of orders for the day")+
+  facet_grid(~ Dow_hod_orders_combined$order_dow)
+```
+
+
+#Days Since Prior Order Analysis
+
+
+We are given the gap between two orders for every user. When we plot it we find two categories of people! One that reorders monthly other who does weekly. This is based on the peaks formed at 30th day and 7th day.
+
+
+```{r,message=FALSE, warning=FALSE}
+library(plyr)
+library(dplyr)
+Reordering_Gap<-count(orders,'days_since_prior_order')%>%arrange(desc(freq))%>%mutate(Percent_orders=round(freq*100/nrow(orders)),2)
+
+#Inference: 11 % of the time people reorder monthly(after 30 days), and 9 % of the time weekly. This shows there is a section of people who refill their groceries every month and other who refills every week. Frequency of NA represents total number of unique users and its their first order.
+
+#Visualizing reordering Gap
+
+Reordering_Gap_plot<-ggplot(orders,aes(x=days_since_prior_order))+
+  geom_histogram(aes(fill=..count..),binwidth=1)+
+  scale_x_continuous(name = "Days Since Prior Order",breaks = seq(0, 30, 1))+
+  scale_y_continuous(name = "Frequency of Orders",breaks=seq(0,1000000,100000))+
+  ggtitle("Gap between two orders?")+
+  labs(x="Days Since Prior Order")+
+  theme_update()
+Reordering_Gap_plot
+```
+
+#Prior Table Analysis
+#{.tabset}
+
+##Top Ordered Products
+
+```{r,warning=FALSE,message=FALSE}
+top25_products<-count(prior$product_id)%>%arrange(desc(freq))%>%head(25)
+
+colnames(top25_products)[1]<-'product_id'
+
+Top25Products<-merge(top25_products,Products_Aisles_Departments,by='product_id')%>%arrange(desc(freq))
+
+kable(head(Top25Products,25))
+
+#Visualization of top 50 products
+
+ggplot(Top25Products, aes(x = reorder(product_name,freq), y = freq,label=paste0(round(freq,0)))) +
+  geom_bar(stat = "identity")+coord_flip()+labs(title="Most ordered Products: Top 25 ",y="Number of orders",x="product_name")+
+  geom_text(nudge_y = 20000)
+```
+
+##Least Ordered Products
+
+```{r,warning=FALSE,message=FALSE}
+
+#Bottom 25 (least ordered products)
+
+bottom25_products<-count(prior$product_id)%>%arrange(desc(freq))%>%tail(25)
+
+colnames(bottom25_products)[1]<-'product_id'
+
+bottom25Products<-merge(bottom25_products,Products_Aisles_Departments,by='product_id')%>%arrange(freq)
+
+kable(head(bottom25Products,25))
+
+#Visualization of bottom 25 products
+
+ggplot(bottom25Products, aes(x = reorder(product_name,freq), y = freq,label=paste0(round(freq,0)))) +
+  geom_bar(stat = "identity")+coord_flip()+labs(title="least ordered Products: Bottom 25 ",y="Number of orders",x="product_name")+
+  geom_text(nudge_y = 1)
+
+```
+
+
+#Market Basket Analysis
+
+Market Basket Analysis has wide applications including but not limited to cross selling, product placement, affinity promotion, fraud detection and customer behavior
+
+#{.tabset}
+
+##Association Rules - Theory
+
+Apriori Algorithm and Association Rules
+
+Frequent Itemset Property: Any subset of a frequent itemset is frequent.
+
+Contrapositive: If an itemset is not frequent, none of its supersets are frequent.
+
+
+.	A set of items is referred as an itemset. A itemset that contains k items is a k-itemset
+.	In theory, we can consider all rules -exponentially many but it is not a practical solution. Hence, we consider only combinations that occur with high frequency and call such sets as frequent item sets
+.	The idea of frequent item sets is used for computational efficiency. If the set {item A, Item B} is not frequent, then no set containing item A and item B are frequent, and therefore do not need to be considered
+
+Support
+
+.	The support s of an itemset A is the percentage of transactions in the transaction database D that contains A
+.	The support of the rule A???B in the transaction database D is the support of the items set (A and B) in D
+.	Rules with low support may have happened by chance. Low support rules may be uninteresting from the business side with an exception if the consequent is very valuable and /or the confidence is very high
+
+Confidence
+
+.	The confidence of the rule A???B in the transaction database D is the ratio of the number of transactions in D that contain (A and B) to the number of transactions that contain A in D
+.	The confidence of A???B is a measure of the reliability of the rule
+.	It is an estimate of P(B|A). That is, it tells us the conditional probability that the items in the consequent set are contained in a randomly selected transaction that includes the antecedent set
+
+Lift Ratio
+
+.	The lift ratio allows us to judge the strength of an association rule compared to a benchmark value
+.	The benchmark: If the antecedent set and consequent sets are independent we can write the confidence as: 
+P (consequent | antecedent) = P (antecedent AND consequent) / P (antecedent)
+                                                      =P (antecedent) x P (consequent) / P (antecedent)
+                                                      =p (consequent)
+.	P(consequent) is called benchmark confidence
+.	Lift ratio is defined as Confidence / benchmark confidence
+.	Lift Ratio = [{support (A and B)} / {Support (A) * Support (B)}]
+.	The lift ratio can take value between 0 and infinity
+
+Interpreting the Results
+
+
+There is no rule of thumb for what is a "good rule". We can consider following points while analyzing our dataset.
+.	How impactful a rule is: This can be measured from the size of support
+.	Efficiency of Rule: The lift tells us how efficient the rule is at finding the consequent set compared to a random selection
+.	Operational usefulness: The confidence tells is how efficient the rule will be in practice
+
+
+
+
+
+## Basket Size-Frequent Item Sets-Arules Vis
+
+
+
+```{r,warning=FALSE,message=FALSE}
+
+prior4mba<-split(prior$product_id,prior$order_id)
+
+transaction_prior<-as(prior4mba,"transactions")
+
+dim(transaction_prior)
+
+#frequent product ids in the transactions
+
+itemFrequencyPlot(transaction_prior,support=0.05,cex.names=0.8)
+
+#Apriori algorithm
+
+basket_rules<-apriori(transaction_prior,parameter = list(sup=0.00001,conf=0.6,maxlen=3,target="rules"))
+
+#Visualizing rules
+
+#Number of Products per basket
+
+hist(size(transaction_prior), breaks = 0:150, xaxt="n", ylim=c(0,250000), col = "grey",
+     main = "Number of Products per Order", xlab = "Order Size:Number of Products")
+axis(1, at=seq(0,160,by=10), cex.axis=0.8)
+mtext(paste("Total:", length(transaction_prior), "Orders,", sum(size(transaction_prior)), "Products"))
+
+#Frequently ordered products
+
+#We find 15 products to occur when the support is set at 0.03. This means these products are found in 3% of the total transactions which is approximately about 90,000
+
+item_frequencies <- itemFrequency(transaction_prior, type="a")
+support <- 0.03
+freq_items <- sort(item_frequencies, decreasing = F)
+freq_items <- freq_items[freq_items>support*length(transaction_prior)]
+
+par(mar=c(2,10,2,2)); options(scipen=5)
+
+barplot(freq_items, horiz=T, las=1, main="Frequent Items", cex.names=.8, xlim=c(0,500000))
+mtext(paste("support:",support), padj = .8)
+abline(v=support*length(transaction_prior), col="red")
+
+#Frequent items bought together
+
+#We desire to make 2 products and 3 product combinations and hence we choose a lower support = 0.003 which means the product is in around 0.3 % of 3 million transactions that is about 10,000 times the product is sold
+
+basket_rules<-apriori(transaction_prior,parameter = list(sup=0.0003, conf=0.5, target="rules"))
+
+plot(basket_rules)
+
+plot(head(sort(basket_rules,by="lift"),10),method="graph")
+
+plot(basket_rules,method="grouped")
+
+#Above figure visualizes all the three parameters: support, confidence, and lift. Confidence level is set at 50%. We get a set of 60 rules. We sort them by the value of lift which gives the efficiency of the rule and thereby make our product combinations
+```
+
